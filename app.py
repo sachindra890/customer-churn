@@ -7,6 +7,12 @@ import json
 import zlib
 import os
 import uuid
+import re
+from datetime import datetime
+from html import escape, unescape
+
+import gspread
+from google.oauth2.service_account import Credentials
 
 from io import BytesIO
 
@@ -46,7 +52,36 @@ st.markdown("""
    ========================================================= */
 
 html, body, [class*="css"] {
-    font-size: 18px;
+    font-size: clamp(14px, 0.95vw + 10px, 18px);
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+img, svg, video, canvas {
+    max-width: 100%;
+}
+
+[data-testid="stAppViewContainer"] {
+    width: 100%;
+}
+
+[data-testid="stMainBlockContainer"] {
+    width: min(100%, 1500px);
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: clamp(12px, 2.5vw, 48px) !important;
+    padding-right: clamp(12px, 2.5vw, 48px) !important;
+}
+
+[data-testid="stHorizontalBlock"] {
+    width: 100%;
+    gap: clamp(8px, 1.2vw, 24px);
+}
+
+[data-testid="stHorizontalBlock"] > [data-testid="column"] {
+    min-width: 0 !important;
 }
 
 
@@ -491,7 +526,8 @@ html, body {
 
 /* Keep the navigation controls below the hamburger. */
 .st-key-nav_prediction,
-.st-key-nav_about {
+.st-key-nav_about,
+.st-key-nav_user_voices {
     position: relative !important;
     z-index: 999995 !important;
 }
@@ -522,31 +558,67 @@ html, body {
    MOBILE RESPONSIVE DESIGN
    ========================================================= */
 
+@media (max-width: 1100px) {
+    [data-testid="stMainBlockContainer"] {
+        padding-left: clamp(12px, 2vw, 28px) !important;
+        padding-right: clamp(12px, 2vw, 28px) !important;
+    }
+
+    .main-title { font-size: clamp(32px, 4vw, 42px); }
+    .section-title { font-size: clamp(24px, 2.8vw, 28px); }
+
+    .st-key-nav_panel {
+        width: min(290px, 82vw) !important;
+    }
+
+    [data-testid="stMainBlockContainer"][style*="290px"] {
+        margin-left: min(290px, 82vw) !important;
+        width: calc(100% - min(290px, 82vw)) !important;
+    }
+}
+
 @media (max-width: 768px) {
+    [data-testid="stMainBlockContainer"] {
+        padding-left: 12px !important;
+        padding-right: 12px !important;
+    }
+
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+    }
+
+    [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+        flex: 1 1 calc(50% - 8px) !important;
+        width: calc(50% - 8px) !important;
+    }
 
     .model-online-badge {
-        top: 14px !important;
-        right: 14px !important;
-        font-size: 13px;
-        padding: 7px 12px;
+        top: 12px !important;
+        right: 12px !important;
+        font-size: 12px;
+        padding: 6px 10px;
     }
 
     .main-title {
-        font-size: 31px;
+        font-size: clamp(26px, 7vw, 34px);
+        line-height: 1.15;
+        padding-right: 72px;
     }
 
     .subtitle {
-        font-size: 18px;
+        font-size: clamp(15px, 4vw, 18px);
+        margin-bottom: 22px;
     }
 
     .section-title {
-        font-size: 25px;
+        font-size: clamp(22px, 6vw, 26px);
     }
 
     .prediction-option button {
-        min-height: 125px !important;
-        height: 125px !important;
-        font-size: 18px !important;
+        min-height: 118px !important;
+        height: auto !important;
+        font-size: clamp(16px, 4vw, 18px) !important;
+        padding: 18px !important;
     }
 
     .mobile-back-button {
@@ -556,10 +628,374 @@ html, body {
 
     .mobile-back-button button {
         width: auto !important;
-        min-width: 120px !important;
-        min-height: 44px !important;
-        font-size: 16px !important;
+        min-width: 110px !important;
+        min-height: 42px !important;
+        font-size: 15px !important;
     }
+
+    .share-card {
+        padding: 14px;
+        margin-top: 18px;
+    }
+
+    .share-card button {
+        min-height: 48px;
+        font-size: 15px !important;
+    }
+}
+
+@media (max-width: 520px) {
+    [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+        flex-basis: 100% !important;
+        width: 100% !important;
+    }
+
+    .gauge-row {
+        grid-template-columns: 1fr !important;
+    }
+
+    .model-online-badge {
+        max-width: 145px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .share-card {
+        padding: 12px;
+    }
+}
+
+
+
+/* =========================================================
+   CUSTOMER REVIEW / USER VOICES
+   ========================================================= */
+.review-page-shell {
+    max-width: 1120px;
+    width: 100%;
+    margin: 0 auto;
+    padding: clamp(12px, 3vw, 20px) clamp(4px, 2vw, 0px) clamp(30px, 6vw, 50px);
+    overflow-wrap: break-word;
+    word-break: break-word;
+    box-sizing: border-box;
+}
+.review-hero {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: clamp(12px, 3vw, 22px);
+    margin: clamp(10px, 3vw, 18px) 0 clamp(20px, 5vw, 34px);
+}
+.review-hero-icon {
+    width: clamp(48px, 10vw, 72px);
+    height: clamp(42px, 8vw, 60px);
+    border-radius: 16px;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(24px, 6vw, 38px);
+    flex-shrink: 0;
+    box-shadow: 0 10px 24px rgba(37,99,235,.25);
+}
+.review-hero-title {
+    font-size: clamp(24px, 5.5vw, 38px);
+    font-weight: 800;
+    line-height: 1.2;
+    margin: 0 0 10px;
+}
+.review-hero-subtitle {
+    color: #64748b;
+    font-size: clamp(14px, 2.4vw, 18px);
+    line-height: 1.6;
+    max-width: 760px;
+}
+.review-card {
+    background: linear-gradient(145deg, #151a24, #1b2230);
+    border: 1px solid #2f3b4f;
+    border-radius: 18px;
+    padding: clamp(16px, 4vw, 28px) clamp(14px, 4vw, 30px);
+    margin-bottom: 24px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.22);
+    overflow-wrap: break-word;
+    word-break: break-word;
+    box-sizing: border-box;
+}
+.review-card-title {
+    color: #f8fafc;
+    font-size: clamp(19px, 4vw, 24px);
+    font-weight: 750;
+    margin-bottom: 5px;
+}
+.review-card-subtitle {
+    color: #94a3b8;
+    font-size: clamp(14px, 2.2vw, 17px);
+    line-height: 1.5;
+    margin-bottom: 20px;
+}
+.review-stars-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+    gap: 0;
+    margin-top: 10px;
+}
+.review-star-cell {
+    min-height: clamp(120px, 22vw, 170px);
+    padding: clamp(10px, 2.5vw, 15px) 8px 6px;
+    border-right: 1px solid #334155;
+    border-bottom: 1px solid #334155;
+    text-align: center;
+}
+.review-star-cell:last-child { border-right: 0; }
+.review-star {
+    font-size: clamp(38px, 9vw, 60px);
+    line-height: 1;
+    color: #fbbf24;
+    margin-bottom: 14px;
+}
+.review-star-meaning {
+    color: #f8fafc;
+    font-size: clamp(15px, 3vw, 18px);
+    font-weight: 750;
+}
+.review-star-desc {
+    color: #94a3b8;
+    font-size: clamp(13px, 2.4vw, 16px);
+    line-height: 1.45;
+    margin-top: 8px;
+}
+.review-selected {
+    background: rgba(251,191,36,.08);
+    border-radius: 14px;
+}
+.review-submit-wrap {
+    display: flex;
+    justify-content: center;
+    margin: 8px 0 12px;
+}
+.review-submit-note {
+    text-align: center;
+    color: #94a3b8;
+    font-size: clamp(13px, 2.4vw, 16px);
+    padding: 0 8px;
+}
+.review-back-row {
+    margin-bottom: 18px;
+}
+.review-card textarea {
+    border-radius: 12px !important;
+}
+.user-voice-card {
+    background: linear-gradient(145deg, #151a24, #1b2230);
+    border: 1px solid #2f3b4f;
+    border-radius: 18px;
+    padding: clamp(16px, 4vw, 24px) clamp(14px, 4vw, 26px);
+    margin-bottom: 18px;
+    box-shadow: 0 10px 28px rgba(0,0,0,.22);
+    transition: border-color .2s ease, transform .2s ease, box-shadow .2s ease;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    box-sizing: border-box;
+}
+.user-voice-card:hover {
+    border-color: #3b82f6;
+    transform: translateY(-1px);
+    box-shadow: 0 14px 32px rgba(0,0,0,.28);
+}
+.user-voice-stars {
+    color: #fbbf24;
+    font-size: clamp(20px, 4vw, 27px);
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+}
+.user-voice-meaning {
+    color: #f8fafc;
+    font-weight: 750;
+    font-size: clamp(16px, 3vw, 18px);
+    margin-bottom: 14px;
+}
+.user-voice-label {
+    color: #94a3b8;
+    font-size: clamp(12px, 2vw, 14px);
+    font-weight: 750;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    margin-top: 14px;
+    margin-bottom: 5px;
+}
+.user-voice-text {
+    color: #e2e8f0;
+    font-size: clamp(14px, 2.6vw, 16px);
+    line-height: 1.65;
+    white-space: pre-wrap;
+}
+.user-voice-date {
+    color: #94a3b8;
+    font-size: clamp(11px, 2vw, 13px);
+    margin-top: 18px;
+}
+.review-error {
+    border-radius: 12px;
+}
+
+
+.st-key-review_star_1 button,
+.st-key-review_star_2 button,
+.st-key-review_star_3 button,
+.st-key-review_star_4 button,
+.st-key-review_star_5 button {
+    background: transparent !important;
+    border: 0 !important;
+    color: #fbbf24 !important;
+    font-size: 60px !important;
+    min-height: 76px !important;
+    height: 76px !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    line-height: 1 !important;
+}
+.st-key-review_star_1 button:hover,
+.st-key-review_star_2 button:hover,
+.st-key-review_star_3 button:hover,
+.st-key-review_star_4 button:hover,
+.st-key-review_star_5 button:hover {
+    background: #fff7ed !important;
+}
+.st-key-review_star_1 button:focus,
+.st-key-review_star_2 button:focus,
+.st-key-review_star_3 button:focus,
+.st-key-review_star_4 button:focus,
+.st-key-review_star_5 button:focus {
+    box-shadow: 0 0 0 2px rgba(251,191,36,.35) !important;
+}
+.inline-review-section {
+    margin: 26px 0 12px;
+}
+.inline-review-heading {
+    font-size: 22px;
+    font-weight: 800;
+    color: #f8fafc;
+    margin-bottom: 4px;
+}
+.inline-review-subtitle {
+    color: #94a3b8;
+    font-size: 14px;
+}
+.inline-review-panel {
+    background: linear-gradient(145deg, #151a24, #1b2230);
+    border: 1px solid #334155;
+    border-radius: 16px;
+    padding: 20px;
+    margin: 10px 0 24px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.20);
+}
+.inline-review-label {
+    color: #f8fafc;
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+.inline-star-caption {
+    text-align: center;
+    color: #94a3b8;
+    font-size: 11px;
+    line-height: 1.3;
+    padding-top: 2px;
+}
+.inline-star-caption strong {
+    display: block;
+    color: #e2e8f0;
+    font-size: 12px;
+}
+.inline-star-caption.selected strong {
+    color: #e2e8f0;
+}
+.inline-review-panel textarea {
+    border-radius: 10px !important;
+}
+.st-key-single_review_star_1,
+.st-key-single_review_star_2,
+.st-key-single_review_star_3,
+.st-key-single_review_star_4,
+.st-key-single_review_star_5,
+.st-key-batch_review_star_1,
+.st-key-batch_review_star_2,
+.st-key-batch_review_star_3,
+.st-key-batch_review_star_4,
+.st-key-batch_review_star_5 {
+    display: flex !important;
+    justify-content: center !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.st-key-single_review_star_1 button,
+.st-key-single_review_star_2 button,
+.st-key-single_review_star_3 button,
+.st-key-single_review_star_4 button,
+.st-key-single_review_star_5 button,
+.st-key-batch_review_star_1 button,
+.st-key-batch_review_star_2 button,
+.st-key-batch_review_star_3 button,
+.st-key-batch_review_star_4 button,
+.st-key-batch_review_star_5 button {
+    background: transparent !important;
+    border: 0 !important;
+    color: #94a3b8 !important;
+    font-size: 42px !important;
+    min-height: 52px !important;
+    height: 52px !important;
+    width: 52px !important;
+    min-width: 52px !important;
+    max-width: 52px !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    box-shadow: none !important;
+    line-height: 1 !important;
+    transition: transform .15s ease, color .15s ease !important;
+}
+
+.st-key-single_review_star_1 button:hover,
+.st-key-single_review_star_2 button:hover,
+.st-key-single_review_star_3 button:hover,
+.st-key-single_review_star_4 button:hover,
+.st-key-single_review_star_5 button:hover,
+.st-key-batch_review_star_1 button:hover,
+.st-key-batch_review_star_2 button:hover,
+.st-key-batch_review_star_3 button:hover,
+.st-key-batch_review_star_4 button:hover,
+.st-key-batch_review_star_5 button:hover {
+    background: transparent !important;
+    color: #fbbf24 !important;
+    transform: scale(1.08);
+}
+
+.st-key-single_review_star_1 button:focus,
+.st-key-single_review_star_2 button:focus,
+.st-key-single_review_star_3 button:focus,
+.st-key-single_review_star_4 button:focus,
+.st-key-single_review_star_5 button:focus,
+.st-key-batch_review_star_1 button:focus,
+.st-key-batch_review_star_2 button:focus,
+.st-key-batch_review_star_3 button:focus,
+.st-key-batch_review_star_4 button:focus,
+.st-key-batch_review_star_5 button:focus {
+    outline: none !important;
+    box-shadow: none !important;
+}
+/* Below ~430px (small phones in portrait) the 5-star row can't fit even
+   two cells per line comfortably, so drop to a single column explicitly.
+   Everything else above this is handled by the clamp()-based fluid rules. */
+@media (max-width: 430px) {
+    .review-stars-row { grid-template-columns: 1fr; }
+    .review-star-cell {
+        border-right: 0;
+        border-bottom: 1px solid #334155;
+        min-height: 0;
+    }
+    .review-star-cell:last-child { border-bottom: 0; }
 }
 
 </style>
@@ -1809,6 +2245,417 @@ def create_pdf(
     return output.getvalue()
 
 
+
+# =========================================================
+# CUSTOMER REVIEW / GOOGLE SHEETS HELPERS
+# =========================================================
+REVIEW_SHEET_COLUMNS = [
+    "Rating",
+    "Rating Meaning",
+    "Experience",
+    "Suggested Improvements",
+    "Date/Time",
+    "Approved",
+]
+
+RATING_MEANINGS = {
+    1: ("Very Poor", "Very Dissatisfied"),
+    2: ("Poor", "Dissatisfied"),
+    3: ("Average", "Neutral"),
+    4: ("Good", "Satisfied"),
+    5: ("Excellent", "Very Satisfied"),
+}
+
+
+def _review_secrets_available():
+    try:
+        return (
+            "gcp_service_account" in st.secrets
+            and "google_sheets" in st.secrets
+            and st.secrets["google_sheets"].get("spreadsheet_url")
+        )
+    except Exception:
+        return False
+
+
+@st.cache_resource(show_spinner=False)
+def get_review_worksheet():
+    '''Connect to the configured Google Sheet using Streamlit Secrets.'''
+    if not _review_secrets_available():
+        raise RuntimeError(
+            "Google Sheets is not configured. Add [gcp_service_account] "
+            "and [google_sheets] to Streamlit Secrets."
+        )
+
+    service_account_info = dict(st.secrets["gcp_service_account"])
+    if "private_key" in service_account_info:
+        service_account_info["private_key"] = service_account_info["private_key"].replace("\\n", "\n")
+
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    credentials = Credentials.from_service_account_info(
+        service_account_info,
+        scopes=scopes,
+    )
+    client = gspread.authorize(credentials)
+
+    sheet_config = st.secrets["google_sheets"]
+    spreadsheet_url = str(sheet_config["spreadsheet_url"]).strip()
+    worksheet_name = str(sheet_config.get("worksheet_name", "Reviews")).strip() or "Reviews"
+
+    spreadsheet = client.open_by_url(spreadsheet_url)
+    try:
+        worksheet = spreadsheet.worksheet(worksheet_name)
+    except gspread.WorksheetNotFound:
+        worksheet = spreadsheet.add_worksheet(title=worksheet_name, rows=1000, cols=len(REVIEW_SHEET_COLUMNS))
+
+    # Ensure the first row contains exactly the required public-storage headers.
+    existing_headers = worksheet.row_values(1)
+    if existing_headers[:len(REVIEW_SHEET_COLUMNS)] != REVIEW_SHEET_COLUMNS:
+        worksheet.update(
+            "A1:F1",
+            [REVIEW_SHEET_COLUMNS],
+        )
+
+    return worksheet
+
+
+def append_review_to_sheet(rating, experience, improvements):
+    worksheet = get_review_worksheet()
+    meaning = RATING_MEANINGS[int(rating)][0]
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    worksheet.append_row(
+        [
+            int(rating),
+            meaning,
+            experience.strip(),
+            improvements.strip(),
+            timestamp,
+            "Yes",
+        ],
+        value_input_option="USER_ENTERED",
+    )
+
+
+def _clean_review_value(value):
+    """Clean legacy review values that accidentally contain HTML markup."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+
+    # Some old rows contain HTML that was itself HTML-escaped. Decode repeatedly
+    # so values such as &lt;div&gt;...&lt;/div&gt; are also cleaned correctly.
+    for _ in range(3):
+        decoded = unescape(text)
+        if decoded == text:
+            break
+        text = decoded
+
+    # Convert common line-break tags to whitespace.
+    text = re.sub(r"<br\s*/?>", " ", text, flags=re.IGNORECASE)
+
+    # Remove every HTML tag, including old review wrappers.
+    text = re.sub(r"<[^>]*>", "", text, flags=re.IGNORECASE)
+
+    # Remove any remaining escaped angle-bracket tags.
+    text = re.sub(r"&lt;/?[^&]*?&gt;", "", text, flags=re.IGNORECASE)
+
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _clean_review_date(value):
+    """Return only the timestamp from a review date value, never HTML."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+
+    # Decode multiple layers of HTML escaping from legacy sheet values.
+    for _ in range(3):
+        decoded = unescape(text)
+        if decoded == text:
+            break
+        text = decoded
+
+    # Prefer the actual timestamp if one exists, even when surrounded by HTML.
+    match = re.search(
+        r"\b(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\b",
+        text,
+    )
+    if match:
+        return match.group(1)
+
+    # Fallback for unexpected legacy values.
+    text = re.sub(r"<[^>]*>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"&lt;/?[^&]*?&gt;", "", text, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def load_approved_reviews():
+    """Load all valid submitted reviews so they appear immediately in User Voices."""
+    worksheet = get_review_worksheet()
+    records = worksheet.get_all_records()
+    if not records:
+        return []
+
+    public_reviews = []
+    for row in records:
+        try:
+            rating = int(float(row.get("Rating", 0)))
+        except (TypeError, ValueError):
+            continue
+        if rating not in RATING_MEANINGS:
+            continue
+
+        experience = _clean_review_value(row.get("Experience", ""))
+        improvements = _clean_review_value(row.get("Suggested Improvements", ""))
+        if not experience and not improvements:
+            continue
+
+        public_reviews.append({
+            "rating": rating,
+            "meaning": _clean_review_value(row.get("Rating Meaning", RATING_MEANINGS[rating][0])),
+            "experience": experience,
+            "improvements": improvements,
+            "date": _clean_review_value(row.get("Date/Time", "")),
+        })
+
+    return public_reviews
+
+def go_customer_review():
+    st.session_state.app_page = "review"
+    st.session_state.prediction_mode = None
+    st.session_state.nav_open = False
+    st.session_state.review_submitted = False
+    st.session_state.review_rating = 0
+    st.session_state.review_experience = ""
+    st.session_state.review_improvements = ""
+
+
+def go_user_voices():
+    st.session_state.app_page = "user_voices"
+    st.session_state.prediction_mode = None
+    st.session_state.nav_open = False
+
+
+def go_back_from_review():
+    st.session_state.app_page = "prediction"
+    st.session_state.prediction_mode = st.session_state.get("previous_prediction_mode")
+    st.session_state.nav_open = False
+    st.session_state.review_submitted = False
+
+
+@st.fragment
+def render_inline_review(prefix="prediction"):
+    """Render the inline review form without full-page flicker when stars are clicked."""
+    rating_key = f"{prefix}_review_rating"
+    submitted_key = f"{prefix}_review_submitted"
+    experience_key = f"{prefix}_review_experience"
+    improvements_key = f"{prefix}_review_improvements"
+
+    st.session_state.setdefault(rating_key, 0)
+    st.session_state.setdefault(submitted_key, False)
+
+    st.markdown(
+        """
+        <div class="inline-review-section">
+            <div class="inline-review-heading">⭐ Review &amp; Feedback</div>
+            <div class="inline-review-subtitle">Tell us how the prediction experience was for you.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if st.session_state[submitted_key]:
+        st.success("Thank you for sharing your experience with us!")
+        return
+
+    st.markdown('<div class="inline-review-panel">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="inline-review-label">How was your experience with the prediction?</div>',
+        unsafe_allow_html=True,
+    )
+
+    current_rating = int(st.session_state[rating_key] or 0)
+
+    # Color the STAR BUTTONS themselves according to the selected rating.
+    # If N is selected, stars 1..N are gold and the remaining stars are gray.
+    # This is intentionally separate from the rating meanings below so that
+    # "Very Poor", "Poor", "Average", etc. never change color when selected.
+    star_css = []
+    for star_index in range(1, 6):
+        star_color = "#fbbf24" if star_index <= current_rating else "#94a3b8"
+        star_css.append(
+            f".st-key-{prefix}_review_star_{star_index} button "
+            f"{{ color: {star_color} !important; }}"
+        )
+
+    st.markdown(
+        "<style>\n"
+        + "\n".join(star_css)
+        + """
+        .inline-star-caption,
+        .inline-star-caption strong,
+        .inline-star-caption span {
+            color: #94a3b8 !important;
+        }
+
+        .inline-star-caption strong {
+            color: #e2e8f0 !important;
+            font-weight: 700;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    star_cols = st.columns(5)
+    for index, col in enumerate(star_cols, start=1):
+        meaning, desc = RATING_MEANINGS[index]
+        with col:
+            # A rating of N fills ALL stars from 1 through N.
+            # Because this function is a Streamlit fragment, clicking a star
+            # reruns only this review fragment instead of blinking the whole page.
+            star_label = "★" if index <= current_rating else "☆"
+
+            if st.button(
+                star_label,
+                key=f"{prefix}_review_star_{index}",
+                help=f"Select {meaning} — {desc}",
+                use_container_width=False,
+            ):
+                st.session_state[rating_key] = index
+                current_rating = index
+
+            # Keep the meaning/description color independent from star selection.
+            st.markdown(
+                '<div class="inline-star-caption">'
+                f'<strong>{escape(meaning)}</strong><span>{escape(desc)}</span></div>',
+                unsafe_allow_html=True,
+            )
+
+    # Keep text entry inside a Streamlit form so typing does NOT rerun the app.
+    with st.form(key=f"{prefix}_review_form", clear_on_submit=False):
+        experience = st.text_area(
+            "Your Experience",
+            placeholder="What did you like or dislike about the prediction?",
+            max_chars=1000,
+            height=130,
+            key=experience_key,
+        )
+
+        improvements = st.text_area(
+            "Suggested Improvements",
+            placeholder="What could we improve? (Optional)",
+            max_chars=1000,
+            height=110,
+            key=improvements_key,
+        )
+
+        submit_col = st.columns([1, 1.2, 1])[1]
+        with submit_col:
+            submitted = st.form_submit_button(
+                "✈️ Submit Review",
+                use_container_width=True,
+            )
+
+    if submitted:
+        if st.session_state[rating_key] not in RATING_MEANINGS:
+            st.warning("Please select a star rating before submitting your review.")
+            return
+        if not experience.strip() and not improvements.strip():
+            st.warning("Please share at least some feedback before submitting.")
+            return
+
+        try:
+            with st.spinner("Submitting your feedback..."):
+                append_review_to_sheet(
+                    st.session_state[rating_key],
+                    experience,
+                    improvements,
+                )
+            st.session_state[submitted_key] = True
+            st.rerun()
+        except Exception as exc:
+            st.error("Unable to submit your review right now. Please check the Google Sheets configuration.")
+            st.caption(str(exc))
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def render_user_voices_page():
+    '''Render approved public reviews only, using the same Streamlit tab.'''
+    st.markdown('<div class="review-page-shell">', unsafe_allow_html=True)
+    if st.button("← Back", key="voices_back_button", use_container_width=False):
+        go_prediction_center()
+        st.rerun()
+
+    st.markdown(
+        '''
+        <div class="review-hero">
+            <div class="review-hero-icon">💬</div>
+            <div>
+                <div class="review-hero-title">User Voices</div>
+                <div class="review-hero-subtitle">
+                    See what users are saying about the Customer Churn Prediction System.
+                </div>
+            </div>
+        </div>
+        ''',
+        unsafe_allow_html=True,
+    )
+
+    try:
+        reviews = load_approved_reviews()
+    except Exception as exc:
+        st.error("Unable to load user reviews right now. Please check the Google Sheets configuration.")
+        st.caption(str(exc))
+        st.markdown('</div>', unsafe_allow_html=True)
+        return
+
+    if not reviews:
+        st.info("No user reviews yet. Be the first to share your experience!")
+        st.markdown('</div>', unsafe_allow_html=True)
+        return
+
+    for review in reversed(reviews):
+        stars = "★" * review["rating"] + "☆" * (5 - review["rating"])
+        experience = escape(review["experience"]) if review["experience"] else "No experience comment provided."
+        improvements = escape(review["improvements"])
+        meaning = escape(review["meaning"])
+        # Date values from older Google Sheet rows may contain the old
+        # <div class="user-voice-date">...</div> wrapper. Clean it before
+        # inserting the value into the public review card.
+        date = escape(_clean_review_date(review["date"]))
+        improvements_html = ""
+        if improvements:
+            improvements_html = (
+                '<div class="user-voice-label">Suggested Improvements</div>'
+                f'<div class="user-voice-text">{improvements}</div>'
+            )
+
+        # Build the card as a single-line HTML string. A multi-line f-string
+        # with a blank/whitespace-only line (e.g. when improvements_html is
+        # "") breaks Streamlit's raw-HTML-block parsing, and the indented
+        # line that follows (the date div) then gets rendered as a Markdown
+        # code block instead of styled HTML. Keeping everything on one line
+        # avoids that entirely.
+        card_html = (
+            '<div class="user-voice-card">'
+            f'<div class="user-voice-stars">{stars}</div>'
+            f'<div class="user-voice-meaning">{meaning}</div>'
+            '<div class="user-voice-label">User Experience</div>'
+            f'<div class="user-voice-text">{experience}</div>'
+            f'{improvements_html}'
+            f'<div class="user-voice-date">{date}</div>'
+            '</div>'
+        )
+        st.markdown(card_html, unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
 # =========================================================
 # ONLINE BADGE & SHARE-LINK HELPERS
 # =========================================================
@@ -1866,7 +2713,7 @@ def decode_share_payload(encoded):
 
 
 def render_copy_link_button(kind, payload, key, share_id=None, button_label="🔗 Share as Link"):
-    """Render a copy-only share control. The actual URL is never displayed."""
+    """Render a reliable copy-only share control inside a Streamlit component iframe."""
     if share_id:
         parameter_name = "share_id"
         parameter_value = share_id
@@ -1879,50 +2726,129 @@ def render_copy_link_button(kind, payload, key, share_id=None, button_label="�
     button_js = json.dumps(button_label)
 
     html = f"""
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <div class="share-card">
-      <button id="copy-{key}" style="width:100%;padding:12px 16px;border:0;border-radius:10px;background:#2563eb;color:white;font-size:16px;font-weight:700;cursor:pointer;">{button_label}</button>
-      <div id="toast-{key}" style="position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(20px);background:#166534;color:white;padding:12px 20px;border-radius:10px;font-size:15px;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:all .25s ease;z-index:999999;">✓ Link copied to clipboard</div>
+      <button id="copy-{key}" type="button" style="width:100%;padding:12px 16px;border:0;border-radius:10px;background:#2563eb;color:white;font-size:16px;font-weight:700;cursor:pointer;">{button_label}</button>
+      <div id="toast-{key}" role="status" aria-live="polite" style="position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:#166534;color:white;padding:12px 20px;border-radius:10px;font-size:15px;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:all .25s ease;z-index:999999;white-space:nowrap;">✓ Link copied to clipboard</div>
     </div>
     <script>
-    const parameterName = {parameter_js};
-    const parameterValue = {value_js};
-    const kind = {json.dumps(kind)};
-    const button = document.getElementById('copy-{key}');
-    const toast = document.getElementById('toast-{key}');
-    button.addEventListener('click', async () => {{
-      try {{
-        const current = new URL(window.parent.location.href);
-        current.search = '';
-        current.searchParams.set(parameterName, parameterValue);
-        current.searchParams.set('view', kind);
-        const shareUrl = current.toString();
-        await navigator.clipboard.writeText(shareUrl);
+    (() => {{
+      const parameterName = {parameter_js};
+      const parameterValue = {value_js};
+      const kind = {json.dumps(kind)};
+      const button = document.getElementById('copy-{key}');
+      const toast = document.getElementById('toast-{key}');
+      const originalLabel = {button_js};
 
+      function showToast(message, success=true) {{
+        toast.textContent = message;
+        toast.style.background = success ? '#166534' : '#991b1b';
         toast.style.opacity = '1';
         toast.style.transform = 'translateX(-50%) translateY(0)';
-        button.textContent = '✓ Link Copied';
-
-        setTimeout(() => {{
+        window.clearTimeout(window.__shareToastTimer);
+        window.__shareToastTimer = window.setTimeout(() => {{
           toast.style.opacity = '0';
           toast.style.transform = 'translateX(-50%) translateY(20px)';
-          button.textContent = {button_js};
-        }}, 1800);
-      }} catch (e) {{
-        toast.textContent = 'Copy failed — allow clipboard access in your browser.';
-        toast.style.background = '#991b1b';
-        toast.style.opacity = '1';
-        toast.style.transform = 'translateX(-50%) translateY(0)';
-        setTimeout(() => {{
-          toast.style.opacity = '0';
-          toast.style.transform = 'translateX(-50%) translateY(20px)';
-          toast.textContent = '✓ Link copied to clipboard';
-          toast.style.background = '#166534';
-        }}, 2200);
+        }}, success ? 1800 : 2600);
       }}
-    }});
+
+      function getAppUrl() {{
+        // IMPORTANT: this component is inside an iframe. document.referrer is
+        // the Streamlit page URL and is the safest source for the real app URL.
+        // It also works when browser iframe security blocks parent.location.
+        const candidates = [];
+
+        try {{
+          if (document.referrer) candidates.push(document.referrer);
+        }} catch (e) {{}}
+
+        try {{
+          if (window.parent && window.parent !== window) {{
+            candidates.push(window.parent.location.href);
+          }}
+        }} catch (e) {{}}
+
+        try {{
+          if (window.top && window.top !== window) {{
+            candidates.push(window.top.location.href);
+          }}
+        }} catch (e) {{}}
+
+        candidates.push(window.location.href);
+
+        for (const candidate of candidates) {{
+          try {{
+            const url = new URL(candidate);
+            // Never copy the component iframe URL. Prefer the Streamlit page.
+            if (candidate === document.referrer || url.pathname === '/' || url.pathname.endsWith('.py')) {{
+              return url;
+            }}
+          }} catch (e) {{}}
+        }}
+
+        return new URL(candidates[0] || window.location.href);
+      }}
+
+      async function copyText(text) {{
+        // Clipboard API: works on localhost/HTTPS when the browser permits it.
+        if (navigator.clipboard && window.isSecureContext) {{
+          try {{
+            await navigator.clipboard.writeText(text);
+            return true;
+          }} catch (e) {{}}
+        }}
+
+        // Legacy fallback. Keep the copy call directly in the click event so
+        // browsers that require a user gesture still allow it.
+        const area = document.createElement('textarea');
+        area.value = text;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.left = '0';
+        area.style.top = '0';
+        area.style.width = '1px';
+        area.style.height = '1px';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.focus();
+        area.select();
+        area.setSelectionRange(0, area.value.length);
+        let copied = false;
+        try {{ copied = document.execCommand('copy'); }} catch (e) {{}}
+        document.body.removeChild(area);
+        return copied;
+      }}
+
+      button.addEventListener('click', async () => {{
+        button.disabled = true;
+        try {{
+          const current = getAppUrl();
+          current.search = '';
+          current.hash = '';
+          current.searchParams.set(parameterName, parameterValue);
+          current.searchParams.set('view', kind);
+
+          // Encode the complete URL once and copy exactly that URL.
+          const shareUrl = current.href;
+          const copied = await copyText(shareUrl);
+
+          if (!copied) throw new Error('Clipboard unavailable');
+
+          button.textContent = '✓ Link Copied';
+          showToast('✓ Link copied to clipboard', true);
+          window.setTimeout(() => {{
+            button.textContent = originalLabel;
+            button.disabled = false;
+          }}, 1800);
+        }} catch (e) {{
+          button.disabled = false;
+          showToast('Copy failed — please allow clipboard access.', false);
+        }}
+      }});
+    }})();
     </script>
     """
-    components.html(html, height=80, scrolling=False)
+    components.html(html, height=92, scrolling=False)
 
 
 def render_shared_single(payload):
@@ -1939,12 +2865,60 @@ def render_shared_single(payload):
     actions = payload.get("actions", [])
 
     col1, col2, col3, col4 = st.columns(4)
-    with col1: st.metric("Churn Probability", f"{churn_probability * 100:.1f}%")
+
+    with col1:
+        st.metric("Churn Probability", f"{churn_probability * 100:.1f}%")
+
+    # Use a fixed-height custom card instead of st.warning/st.error/st.success.
+    # This makes the Risk Level card exactly the same height as the other
+    # three metric cards.
     with col2:
-        if risk_level == "HIGH": st.error(f"🔴 {risk_level} RISK")
-        elif risk_level == "MEDIUM": st.warning(f"🟠 {risk_level} RISK")
-        else: st.success(f"🟢 {risk_level} RISK")
-    with col3: st.metric("Prediction", prediction_text)
+        risk_icon = {
+            "HIGH": "🔴",
+            "MEDIUM": "🟠",
+            "LOW": "🟢"
+        }.get(risk_level, "⚪")
+
+        st.markdown(
+            f"""
+            <div style="
+                min-height: 98px;
+                height: 98px;
+                box-sizing: border-box;
+                padding: 20px;
+                border-radius: 15px;
+                background: #1f2937;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                width: 100%;
+            ">
+                <div style="
+                    font-size: 14px;
+                    color: #f8fafc;
+                    margin-bottom: 8px;
+                    line-height: 1.2;
+                ">
+                    Risk Level
+                </div>
+                <div style="
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    font-size: 20px;
+                    color: #f8fafc;
+                    line-height: 1.2;
+                ">
+                    <span>{risk_icon}</span>
+                    <span>{risk_level} RISK</span>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with col3:
+        st.metric("Prediction", prediction_text)
     with col4:
         icon = {"CRITICAL":"🔴", "HIGH":"🟠", "MEDIUM":"🟡", "LOW":"🟢"}.get(retention_priority, "⚪")
         st.metric("Retention Priority", f"{icon} {retention_priority}")
@@ -2046,6 +3020,12 @@ if "prediction_mode" not in st.session_state:
     st.session_state.prediction_mode = None
 if "nav_open" not in st.session_state:
     st.session_state.nav_open = False
+if "review_submitted" not in st.session_state:
+    st.session_state.review_submitted = False
+if "review_rating" not in st.session_state:
+    st.session_state.review_rating = 0
+if "previous_prediction_mode" not in st.session_state:
+    st.session_state.previous_prediction_mode = None
 
 shared_view, shared_payload = load_shared_result()
 
@@ -2085,8 +3065,8 @@ else:
         '''
         <style>
         [data-testid="stMainBlockContainer"] {
-            margin-left: 290px !important;
-            width: calc(100% - 290px) !important;
+            margin-left: min(290px, 82vw) !important;
+            width: calc(100% - min(290px, 82vw)) !important;
             transition: margin-left 0.25s ease-in-out,
                         width 0.25s ease-in-out !important;
         }
@@ -2123,6 +3103,13 @@ else:
             use_container_width=True
         )
 
+        st.button(
+            "💬 User Voices",
+            key="nav_user_voices",
+            on_click=go_user_voices,
+            use_container_width=True
+        )
+
 if shared_view and shared_payload is not None:
     st.session_state.app_page = "prediction"
     st.session_state.prediction_mode = shared_view
@@ -2130,6 +3117,10 @@ if shared_view and shared_payload is not None:
         render_shared_single(shared_payload)
     else:
         render_shared_batch(shared_payload)
+    st.stop()
+
+if st.session_state.app_page == "user_voices":
+    render_user_voices_page()
     st.stop()
 
 if st.session_state.app_page == "about":
@@ -3268,12 +4259,51 @@ elif st.session_state.prediction_mode == "single":
             )
 
         with col2:
-            if risk_level == "HIGH":
-                st.error(f"🔴 {risk_level} RISK")
-            elif risk_level == "MEDIUM":
-                st.warning(f"🟠 {risk_level} RISK")
-            else:
-                st.success(f"🟢 {risk_level} RISK")
+            # Use a fixed-height custom card so LOW/MEDIUM/HIGH risk
+            # occupies exactly the same visual size as the other metric cards.
+            risk_icon = {
+                "HIGH": "🔴",
+                "MEDIUM": "🟠",
+                "LOW": "🟢"
+            }.get(risk_level, "⚪")
+
+            st.markdown(
+                f"""
+                <div style="
+                    min-height: 98px;
+                    height: 98px;
+                    box-sizing: border-box;
+                    padding: 20px;
+                    border-radius: 15px;
+                    background: #1f2937;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    width: 100%;
+                ">
+                    <div style="
+                        font-size: 14px;
+                        color: #f8fafc;
+                        margin-bottom: 8px;
+                        line-height: 1.2;
+                    ">
+                        Risk Level
+                    </div>
+                    <div style="
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
+                        font-size: 20px;
+                        color: #f8fafc;
+                        line-height: 1.2;
+                    ">
+                        <span>{risk_icon}</span>
+                        <span>{risk_level} RISK</span>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
         with col3:
             prediction_text = (
@@ -3326,18 +4356,21 @@ elif st.session_state.prediction_mode == "single":
             "reasons": single_reasons,
             "actions": single_actions,
         }
-        if st.button("🔗 Share as Link", key="create_single_share", use_container_width=True):
-            st.query_params["share"] = encode_share_payload(single_share_payload)
-            st.query_params["view"] = "single"
-            st.session_state.single_share_ready = True
-            st.rerun()
+        # =================================================
+        # COPY SINGLE RESULT SHARE LINK
+        # =================================================
+        # Do NOT modify st.query_params here and do NOT call st.rerun().
+        # The link is generated inside the component and copied directly
+        # to the clipboard. This keeps the user on the current prediction
+        # result instead of redirecting to the shared-result view.
+        render_copy_link_button(
+            "single",
+            single_share_payload,
+            "single-share"
+        )
 
-        if st.session_state.get("single_share_ready") and st.query_params.get("share"):
-            render_copy_link_button(
-                "single",
-                single_share_payload,
-                "single-share"
-            )
+        # Review form is embedded directly below Share as Link.
+        render_inline_review("single")
 
 
 # =========================================================
@@ -3673,6 +4706,9 @@ elif st.session_state.prediction_mode == "batch":
                     share_id=batch_share_id,
                     button_label="🔗 Share as Link"
                 )
+
+                # Review form is embedded directly below Share as Link.
+                render_inline_review("batch")
 
         except Exception as e:
             st.error("❌ Unable to process the uploaded file.")
